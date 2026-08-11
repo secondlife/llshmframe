@@ -14,8 +14,11 @@ include(CMakePackageConfigHelpers)
 # Studio, Xcode); a silent no-op elsewhere.
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# local subset of Boost headers - no libs needed
-set(Boost_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/third-party/boost_1_91_0/")
+# local subset of Boost headers - no libs needed. CMAKE_CURRENT_SOURCE_DIR,
+# not CMAKE_SOURCE_DIR: this must resolve relative to this file even when
+# llshmframe is add_subdirectory()'d from a parent project, not just when
+# it's the top-level project itself.
+set(Boost_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/third-party/boost_1_91_0/")
 
 if(LLSHMFRAME_SHARED)
     add_library(llshmframe SHARED)
