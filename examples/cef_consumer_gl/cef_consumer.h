@@ -35,9 +35,10 @@ class CefConsumer {
         CefConsumer();
         ~CefConsumer();
 
-        // Probes llshmframe_cef_0.. for a channel nobody else has claimed.
+        // Probes llshmframe_cef_0.. for a channel nobody else has claimed,
+        // then sends start_url as this view's initial kSetUrl if non-empty.
         // Must succeed before init()/run() are called.
-        bool connectToProducer(int slot_count);
+        bool connectToProducer(int slot_count, const std::string& start_url = "");
 
         void init();
         void initGLFWCallbacks();

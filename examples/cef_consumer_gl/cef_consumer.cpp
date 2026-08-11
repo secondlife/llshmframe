@@ -22,7 +22,7 @@ static void errorCallback(int error, const char* description)
     exit(1);
 }
 
-bool CefConsumer::connectToProducer(int slot_count)
+bool CefConsumer::connectToProducer(int slot_count, const std::string& start_url)
 {
     bool saw_any_producer = false;
 
@@ -42,6 +42,16 @@ bool CefConsumer::connectToProducer(int slot_count)
             mSub       = std::move(sub);
             mSlotIndex = i;
             std::cout << "connected to slot " << i << "\n";
+
+            // Stands in for the start URL a real CEF embedder always
+            // supplies when it creates a browser view -- sent immediately so
+            // the producer's first regeneration already reflects it rather
+            // than a placeholder default.
+            if (!start_url.empty())
+            {
+                std::cout << "-> kSetUrl " << start_url << "\n";
+                mSub->send_text(kSetUrl, start_url);
+            }
             return true;
         }
     }
@@ -263,8 +273,10 @@ int main(int argc, char* argv[])
     if (argc > 1) slot_count = std::atoi(argv[1]);
     if (slot_count <= 0) slot_count = 1;
 
+    const std::string start_url = argc > 2 ? argv[2] : "";
+
     CefConsumer app;
-    if (! app.connectToProducer(slot_count))
+    if (! app.connectToProducer(slot_count, start_url))
     {
         return 1;
     }
