@@ -10,6 +10,6 @@ if "%~1"=="" (
 )
 
 for /L %%i in (1, 1, %N%) do (
-    echo Starting consunmer: %%i
+    echo Starting consumer: %%i
     start build\release\llshmframe_multiview_consumer.exe
 )

@@ -205,6 +205,45 @@ static void test_command_ownership()
     CHECK(sub3->owns_command_channel());
 }
 
+static void test_command_ownership_steal_after_crash()
+{
+    std::printf("command channel stolen from a crashed owner\n");
+    LLConfig c; c.name = "sf_test_n"; c.max_width = 32; c.max_height = 32;
+
+    auto pub = LLPublisher::create(c);
+    CHECK(pub != nullptr); if (!pub) return;
+
+    auto sub1 = LLSubscriber::open(c.name);
+    CHECK(sub1->connected());
+    CHECK(sub1->owns_command_channel());
+    CHECK(sub1->send_text(1, "from sub1"));
+
+    // Simulate a crash: no destructor runs, so the claim is never released
+    // and its heartbeat simply stops advancing.
+    (void)sub1.release();
+
+    // Arriving immediately, the claim still looks fresh: refused, same as
+    // the ordinary single-owner case above.
+    auto sub2 = LLSubscriber::open(c.name);
+    CHECK(sub2->connected());
+    CHECK(!sub2->owns_command_channel());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2200));
+
+    // Its heartbeat is now stale: the next attacher steals the channel
+    // instead of being refused forever.
+    auto sub3 = LLSubscriber::open(c.name);
+    CHECK(sub3->connected());
+    CHECK(sub3->owns_command_channel());
+
+    LLCommand in;
+    CHECK(pub->receive(in)); // sub1's earlier send was still queued
+    CHECK(in.text() == "from sub1");
+    CHECK(sub3->send_text(2, "from sub3"));
+    CHECK(pub->receive(in));
+    CHECK(in.text() == "from sub3");
+}
+
 static void test_commands_bidirectional()
 {
     std::printf("bidirectional commands\n");
@@ -470,6 +509,7 @@ int main()
     test_double_publisher_guard();
     test_stale_producer_reclaimed();
     test_command_ownership();
+    test_command_ownership_steal_after_crash();
     test_commands_bidirectional();
     test_concurrent_no_tearing();
     test_producer_restart();

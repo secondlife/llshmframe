@@ -167,11 +167,13 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/llshmframeConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/llshmframe)
 
-set(CMAKE_CONFIGURATION_TYPES "Release")
+if(LLSHMFRAME_BUILD_EXAMPLES)
+    set(CMAKE_CONFIGURATION_TYPES "Release")
 
-set_property(
-  DIRECTORY
-  PROPERTY
-  VS_STARTUP_PROJECT
-  llshmframe_multiview_producer
-)
+    set_property(
+      DIRECTORY
+      PROPERTY
+      VS_STARTUP_PROJECT
+      llshmframe_multiview_producer
+    )
+endif()

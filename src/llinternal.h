@@ -16,12 +16,21 @@
 namespace detail
 {
     inline constexpr std::uint32_t kMagic   = 0x534D4634u; // 'SMF4'
-    inline constexpr std::uint32_t kVersion = 4u;
+    inline constexpr std::uint32_t kVersion = 5u;
     inline constexpr std::uint64_t kLine    = 64u;
 
     inline constexpr std::uint32_t kMaxSlots      = 4u; // index packed in 2 bits
     inline constexpr std::uint32_t kMinSlots      = 3u;
     inline constexpr std::uint64_t kMaxSegment    = 2ull * 1024 * 1024 * 1024;
+
+    // How long the current command-channel owner's heartbeat may go quiet
+    // before a newly-attaching LLSubscriber treats it as crashed (rather
+    // than just idle) and steals the channel instead of being refused
+    // forever. Mirrors LLConfig::stale_producer_ms's default magnitude;
+    // not user-configurable yet because the decision is made inside
+    // LLSubscriber::open(), before the caller has a returned object to
+    // configure it through.
+    inline constexpr std::uint64_t kCommandOwnerStaleNs = 2'000'000'000ull;
 
     // Keeps width * bytes_per_pixel (32-bit) and
     // max_width * max_height * bytes_per_pixel (64-bit) comfortably clear of
@@ -102,11 +111,21 @@ namespace detail
         // abandoned segment (see LLPublisher::create()).
         alignas(kLine) std::atomic<std::uint64_t> last_heartbeat_ns;
 
-        // 0 = unclaimed. Compare-exchanged to 1 by the first LLSubscriber to
-        // attach to this session; enforces the single-subscriber-per-session
-        // rule on the command channel, which (unlike frames) is not safe for
-        // multiple concurrent readers/writers.
-        alignas(kLine) std::atomic<std::uint32_t> command_owner;
+        // 0 = unclaimed. Compare-exchanged from 0 (or from a stale claim,
+        // see command_owner_heartbeat_ns) to a unique nonzero token by
+        // whichever LLSubscriber currently holds the command channel;
+        // enforces the single-subscriber-per-session rule on it, which
+        // (unlike frames) is not safe for multiple concurrent
+        // readers/writers. The token's value carries no meaning beyond
+        // "nonzero and distinct from the previous claim" -- see
+        // LLSubscriber::try_connect().
+        alignas(kLine) std::atomic<std::uint64_t> command_owner_gen;
+
+        // Refreshed by whichever subscriber currently holds
+        // command_owner_gen, on every poll()/send()/receive(); lets a new
+        // attacher tell a merely-quiet owner apart from one that crashed
+        // without releasing the channel (see kCommandOwnerStaleNs).
+        alignas(kLine) std::atomic<std::uint64_t> command_owner_heartbeat_ns;
     };
 
     // ---------------------------------------------------------- layout

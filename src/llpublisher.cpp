@@ -302,5 +302,5 @@ const LLConfig& LLPublisher::config() const          { return d_->cfg; }
 
 bool LLPublisher::has_subscriber() const
 {
-    return d_->hdr && d_->hdr->command_owner.load(std::memory_order_acquire) != 0;
+    return d_->hdr && d_->hdr->command_owner_gen.load(std::memory_order_acquire) != 0;
 }

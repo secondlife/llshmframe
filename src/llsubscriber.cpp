@@ -25,6 +25,7 @@ struct LLSubscriber::Impl
     std::uint64_t sent = 0, recvd = 0, cmd_dropped = 0;
     bool          peer_shutdown = false;
     bool          owns_commands = false;
+    std::uint64_t owner_gen     = 0; // our claim token, valid while owns_commands
 
     std::uint64_t stale_ns     = 500ull * 1000 * 1000;
     std::uint64_t retry_ns     = 250ull * 1000 * 1000;
@@ -40,6 +41,23 @@ struct LLSubscriber::Impl
         hdr = nullptr; base = nullptr;
         tx = LLRing{}; rx = LLRing{};
         owns_commands = false;
+        owner_gen     = 0;
+    }
+
+    // True while we still hold the claim we last took out on
+    // command_owner_gen; false if another subscriber has since stolen it
+    // (see try_connect()). Updates owns_commands as a side effect so
+    // callers can just check that afterwards.
+    bool still_owns_commands()
+    {
+        if (!owns_commands) return false;
+        if (hdr->command_owner_gen.load(std::memory_order_acquire) != owner_gen)
+        {
+            owns_commands = false; // stolen while we were stalled
+            return false;
+        }
+        hdr->command_owner_heartbeat_ns.store(now_ns(), std::memory_order_release);
+        return true;
     }
 
     // Validate a candidate mapping and adopt it if it is a new session.
@@ -79,10 +97,33 @@ struct LLSubscriber::Impl
 
         // The command channel is single-subscriber: the first subscriber to
         // reach a fresh session claims it, everyone else is refused rather
-        // than silently corrupting shared head/tail bookkeeping.
-        std::uint32_t expected = 0;
-        owns_commands = h->command_owner.compare_exchange_strong(
-            expected, 1, std::memory_order_acq_rel);
+        // than silently corrupting shared head/tail bookkeeping -- unless
+        // the current claimant's heartbeat has gone stale (crashed without
+        // releasing it), in which case we steal it instead of being refused
+        // forever. A lost CAS just means someone else claimed or stole it
+        // between our load and our attempt; reassess rather than give up.
+        owns_commands = false;
+        std::uint64_t existing_gen = h->command_owner_gen.load(std::memory_order_acquire);
+        for (;;)
+        {
+            if (existing_gen != 0)
+            {
+                const std::uint64_t age = now_ns() -
+                    h->command_owner_heartbeat_ns.load(std::memory_order_acquire);
+                if (age < kCommandOwnerStaleNs) break; // genuinely held; give up
+            }
+
+            std::uint64_t claim = now_ns();
+            if (claim == 0) claim = 1; // 0 is reserved for "unclaimed"
+            if (h->command_owner_gen.compare_exchange_weak(
+                    existing_gen, claim, std::memory_order_acq_rel))
+            {
+                owns_commands = true;
+                owner_gen     = claim;
+                h->command_owner_heartbeat_ns.store(now_ns(), std::memory_order_release);
+                break;
+            }
+        }
 
         tx = LLRing{base, L.upstream_offset,   &L, c.command_slots, c.max_command_bytes};
         rx = LLRing{base, L.downstream_offset, &L, c.command_slots, c.max_command_bytes};
@@ -95,7 +136,14 @@ LLSubscriber::LLSubscriber() : d_(new Impl) {}
 LLSubscriber::~LLSubscriber()
 {
     if (d_->hdr && d_->owns_commands)
-        d_->hdr->command_owner.store(0, std::memory_order_release);
+    {
+        // CAS rather than an unconditional store: if we were stolen from
+        // while stalled, someone else's claim is now in there and this
+        // clean-looking exit must not clobber it.
+        std::uint64_t expected = d_->owner_gen;
+        d_->hdr->command_owner_gen.compare_exchange_strong(
+            expected, 0, std::memory_order_release);
+    }
 }
 
 std::unique_ptr<LLSubscriber> LLSubscriber::open(std::string name)
@@ -122,6 +170,12 @@ bool LLSubscriber::poll()
 {
     Impl& m = *d_;
     const std::uint64_t now = now_ns();
+
+    // Refreshes our command-channel heartbeat on every poll (not just when
+    // we happen to send/receive), so a consumer that only ever reads frames
+    // still keeps a stale-owner steal from firing while it is genuinely
+    // alive. Also catches the case where we were stolen from while stalled.
+    if (m.hdr) m.still_owns_commands();
 
     // Healthy and recently productive: nothing to do. This is the common
     // path and costs one subtraction.
@@ -252,7 +306,7 @@ bool LLSubscriber::send(std::uint32_t type, const void* data, std::uint32_t size
                         std::uint64_t reply_to, std::uint64_t* out_id)
 {
     Impl& m = *d_;
-    if (!m.hdr || !m.owns_commands) return false;
+    if (!m.hdr || !m.still_owns_commands()) return false;
 
     const std::uint64_t id = m.next_cmd;
     if (!m.tx.push(type, data, size, id, reply_to, now_ns()))
@@ -276,7 +330,8 @@ bool LLSubscriber::send_text(std::uint32_t type, std::string_view text,
 bool LLSubscriber::receive(LLCommand& out)
 {
     Impl& m = *d_;
-    if (!m.hdr || !m.owns_commands || !m.rx.pop(out)) return false;
+    if (!m.hdr || !m.still_owns_commands()) return false;
+    if (!m.rx.pop(out)) return false;
     ++m.recvd;
     m.last_progress = now_ns(); // command traffic counts as liveness
     return true;

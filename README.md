@@ -3,10 +3,10 @@
 Real-time frame and command transport over shared memory, for exchanging
 pixel buffers between processes.
 
-- **Frames** — lock-free triple buffer with per-slot seqlocks. Latest-wins: a
+- **Frames** - lock-free triple buffer with per-slot seqlocks. Latest-wins: a
   slow consumer skips frames instead of stalling the producer. Zero-copy on
   the producer side.
-- **Commands** — two lock-free SPSC rings, one per direction. Ordered,
+- **Commands** - two lock-free SPSC rings, one per direction. Ordered,
   lossless, with back-pressure reported rather than silently dropped.
 - **No mutex on the data path.** A peer that crashes, hangs, or sits in a
   debugger cannot wedge the survivor.
@@ -86,8 +86,8 @@ tracking the consumer goes silent forever with no error. Each segment carries
 a session id; the subscriber notices, re-opens by name, and resyncs.
 `sessions()` counts re-attachments.
 
-*(Windows only: this specific recovery — restarting the producer while a
-subscriber stays attached throughout — does not apply. See "Windows" below.)*
+*(Windows only: this specific recovery - restarting the producer while a
+subscriber stays attached throughout - does not apply. See "Windows" below.)*
 
 **A second live publisher under the same name is refused, not allowed to
 steal it.** `LLPublisher::create()` only reclaims an existing same-named
@@ -104,7 +104,7 @@ away.
 **One publisher, one subscriber for commands.** Frames tolerate several
 independent readers, but the command channel is SPSC in each direction: two
 subscribers pushing/popping the same ring concurrently would corrupt its
-head/tail bookkeeping. This is enforced, not just documented — the first
+head/tail bookkeeping. This is enforced, not just documented - the first
 `LLSubscriber` to attach to a given publisher session claims the command
 channel; `send()`/`receive()` on any other subscriber attached to that same
 session return `false` until the owner detaches, at which point the next
@@ -112,13 +112,21 @@ newly-opened subscriber can claim it. Check `owns_command_channel()` if you
 need to know which one you are. Give each consumer its own channel if you
 need several to use commands at once.
 
+A subscriber that crashes instead of detaching cleanly does not orphan the
+channel forever: it is expected to keep refreshing a heartbeat (via
+`poll()`, `send()`, or `receive()`) while it holds ownership, and once that
+heartbeat goes quiet for a couple of seconds the next attacher steals the
+channel instead of being refused. A stolen-from subscriber finds out on its
+own next call into the library, at which point `owns_command_channel()`
+flips to `false` for it.
+
 **`send()` can fail.** A full ring returns `false` rather than blocking or
 dropping the oldest entry, because only the caller knows whether a command
 should be retried, coalesced, or abandoned. Resize is latest-wins; mouse-down
 is not. Watch `commands_dropped()`.
 
 **`begin_write()` can be cancelled.** If you bail out of a render after
-calling `begin_write()` — an exception, an early return — call
+calling `begin_write()` - an exception, an early return - call
 `cancel_write()` before doing anything else with the publisher. Leaving a
 write pending blocks every future `begin_write()` until it is either
 committed or cancelled.
@@ -132,7 +140,7 @@ sub->set_max_read_hz(30.0);
 
 Both are gates, not sleeps: `begin_write()` returns `nullptr` and
 `read_latest()` returns `LLReadResult::Throttled` when the interval has not
-elapsed. **They cap work, not CPU** — a loop with no sleep of its own will
+elapsed. **They cap work, not CPU** - a loop with no sleep of its own will
 spin at 100% collecting `Throttled` results. Keep your `sleep_until`; use the
 gates to enforce the ceiling regardless of how often the loop happens to run.
 
@@ -141,7 +149,7 @@ Two things the read gate deliberately does not affect: reconnection still runs
 command channel stays at full rate, so input never waits on the frame cap.
 
 **Throttling the consumer is safe for frames, but not for commands.** Frames
-are latest-wins, so a slow reader just skips them — visible in
+are latest-wins, so a slow reader just skips them - visible in
 `frames_dropped()`, with no effect on the producer. Commands are lossless and
 finite, so if the peer sends faster than you drain, the ring fills and its
 `send()` starts returning `false`. Drain commands every loop iteration even
@@ -159,20 +167,20 @@ integer, regardless of `bytes_per_pixel`. `LLPublisher::create()` (and
 that rather than silently truncating.
 
 **ThreadSanitizer will flag the payload copy.** Every seqlock races by the
-letter of the C++ memory model — the reader copies bytes the writer may be
+letter of the C++ memory model - the reader copies bytes the writer may be
 touching and validates afterwards. It is sound on real hardware and is how
 kernel seqlocks work, but TSan cannot model it. Suppress `llsubscriber.cpp`
 if you run under TSan.
 
 **Windows.** `src/llsegment.cpp` uses `boost::interprocess::windows_shared_memory`
-there — a native kernel section object with no filesystem/registry name to
+there - a native kernel section object with no filesystem/registry name to
 leak and no `unlink()` to call: it is destroyed automatically once the last
 handle and mapped region referencing it are gone. `llsegment.cpp` is the only
 file that touches Boost.
 
 This has a real consequence for producer-restart recovery (above): the name
 IS the kernel object's identity, so `LLPublisher::create()` under a name a
-subscriber still has mapped does not get a fresh object — it gets
+subscriber still has mapped does not get a fresh object - it gets
 `LLStatus::AlreadyExists`, because the old section is still alive. Recovering
 from a producer restart on Windows therefore requires *every* subscriber
 still attached to that name to also drop its old mapping (destroy and
@@ -185,17 +193,17 @@ object regardless of who still has it mapped, so the producer alone
 restarting is sufficient and every existing subscriber recovers on its own.
 The same asymmetry applies to heartbeat-based reclaiming of an abandoned
 segment: on Windows it only ever triggers once every process holding the old
-section has actually exited, since a real crash — unlike an in-process leak
-— closes the handle for you.
+section has actually exited, since a real crash - unlike an in-process leak
+- closes the handle for you.
 
 **If your application needs the producer to be freely restartable (crash
 recovery, rolling deploys) while consumers stay up and simply wait, this is
-not something to work around by polling or retrying `create()` — on Windows
+not something to work around by polling or retrying `create()` - on Windows
 it will not resolve until the last consumer lets go.** The `examples/multiview_*`
 demo takes the position that this is acceptable: if the producer dies,
 consumers are expected to notice (`connected()` goes false, or
 `producer_responsive()` does) and exit or restart rather than wait
 indefinitely. A design that avoids this altogether (an always-recreatable
 "which segment is current" indirection in front of the actual data segment)
-is possible but is a real architectural change, not a quick patch — out of
+is possible but is a real architectural change, not a quick patch - out of
 scope unless a future application requirement actually needs it.

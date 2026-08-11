@@ -196,6 +196,13 @@ public:
     // single-subscriber, this doubles as "is anyone attached" -- useful for
     // reacting to a consumer joining without threading your own bookkeeping
     // through the command stream.
+    //
+    // One case this does NOT surface as a false-then-true edge: a crashed
+    // subscriber's claim is handed directly to whichever new one steals it
+    // (see owns_command_channel()), so has_subscriber() can stay
+    // continuously true across that handoff. Detecting "a new consumer
+    // joined" this way will miss that particular transition; it never
+    // misses a clean detach followed by a fresh attach.
     bool has_subscriber() const;
 
 private:
@@ -238,7 +245,12 @@ public:
     // The command channel is single-subscriber: the first LLSubscriber to
     // attach to a given publisher session claims it, and send()/receive()
     // on any other subscriber attached to that same session return false
-    // until the owner detaches. See owns_command_channel().
+    // until the owner detaches -- or, if the owner crashed without
+    // detaching, until its heartbeat goes quiet for a couple of seconds and
+    // a new attacher steals the channel instead of being refused forever.
+    // A stolen-from subscriber finds out on its next send()/receive()/poll()
+    // (including the one inside read_latest()), at which point
+    // owns_command_channel() also flips to false. See owns_command_channel().
     bool send(std::uint32_t  type,
               const void*    data     = nullptr,
               std::uint32_t  size     = 0,
