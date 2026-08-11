@@ -1,3 +1,0 @@
-* Check on ability to shut down and free up a slot - e.g. CEF instance is no longer required.
-    * I think it's already in place but let's add some logging so the producer app
-* Still some file and name reorg to do I think
