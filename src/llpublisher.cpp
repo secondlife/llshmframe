@@ -304,3 +304,12 @@ bool LLPublisher::has_subscriber() const
 {
     return d_->hdr && d_->hdr->command_owner_gen.load(std::memory_order_acquire) != 0;
 }
+
+bool LLPublisher::command_owner_stale() const
+{
+    if (!d_->hdr) return false;
+    if (d_->hdr->command_owner_gen.load(std::memory_order_acquire) == 0) return false;
+    const std::uint64_t age = now_ns() -
+        d_->hdr->command_owner_heartbeat_ns.load(std::memory_order_acquire);
+    return age >= kCommandOwnerStaleNs;
+}

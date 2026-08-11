@@ -18,11 +18,13 @@
 #include <string>
 #include <vector>
 
-// GLFW/OpenGL consumer for the multiview demo: probes the producer's fixed
-// channel pool, claims one, and displays whatever it publishes as a single
-// textured quad -- adapted from a plain local-pattern GLFW/OpenGL skeleton,
-// with the pattern generation replaced by LLSubscriber::read_latest() and
-// the input callbacks replaced by commands sent back to the producer.
+// GLFW/OpenGL consumer for the multiview demo: asks the producer's control
+// channel for a view (which the producer creates on demand -- there is no
+// fixed pool of pre-existing channels to probe any more), claims it, and
+// displays whatever it publishes as a single textured quad -- adapted from a
+// plain local-pattern GLFW/OpenGL skeleton, with the pattern generation
+// replaced by LLSubscriber::read_latest() and the input callbacks replaced
+// by commands sent back to the producer.
 //
 // If the producer dies, this window does not attempt to wait around for it:
 // connected() will go false and, once the producer comes back, this process
@@ -35,10 +37,10 @@ class MultiviewConsumer {
         MultiviewConsumer();
         ~MultiviewConsumer();
 
-        // Probes llshmframe_multiview_0.. for a channel nobody else has claimed,
-        // then sends start_url as this view's initial kSetUrl if non-empty.
-        // Must succeed before init()/run() are called.
-        bool connectToProducer(int slot_count, const std::string& start_url = "");
+        // Requests a view from the producer's control channel, then sends
+        // start_url as that view's initial kSetUrl if non-empty. Must
+        // succeed before init()/run() are called.
+        bool connectToProducer(const std::string& start_url = "");
 
         void init();
         void initGLFWCallbacks();

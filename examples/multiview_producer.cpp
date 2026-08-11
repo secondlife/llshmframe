@@ -1,11 +1,21 @@
 // examples/multiview_producer.cpp
 //
-// One process hosts a fixed pool of independent "view" channels -- a CEF
-// embedder juggling several browser views is the motivating case, but
-// nothing here is CEF-specific. Each channel is its own llshmframe segment
-// -- own frames, own commands -- because each consumer's input only ever
-// affects that one consumer's own content; there is nothing to share
+// One process hosts a pool of up to slot_count independent "view" channels
+// -- a CEF embedder juggling several browser views is the motivating case,
+// but nothing here is CEF-specific. Each channel is its own llshmframe
+// segment -- own frames, own commands -- because each consumer's input only
+// ever affects that one consumer's own content; there is nothing to share
 // between them.
+//
+// Channels are NOT created up front: a real per-view "instance" (a live
+// CEF renderer, in the motivating case; a checkerboard generator here) is
+// too heavy to run slot_count of them regardless of whether anyone is
+// watching. Instead, a small always-on control channel (kControlChannelName)
+// lets a consumer request a channel; this process creates one on demand,
+// hands back its index, and destroys it again once nobody has been attached
+// for a while (see kIdleGracePeriod) -- so the steady-state cost is
+// proportional to how many viewers are actually connected, not to
+// slot_count.
 //
 // Channel names: llshmframe_multiview_0 .. llshmframe_multiview_<slot_count - 1>.
 //
@@ -45,6 +55,14 @@ void on_signal(int) { g_run = 0; }
 
 constexpr auto kRegenPeriod   = std::chrono::milliseconds(2000); // "a few seconds"
 constexpr auto kPublishPeriod = std::chrono::milliseconds(33);   // ~30 fps
+
+// How long a slot may sit with nobody attached before its instance is torn
+// down and the index freed for reuse. Deliberately longer, and a separate
+// concern, from LLPublisher::command_owner_stale()'s ~2s window: that one
+// is "the previous owner almost certainly crashed," this one is "nobody
+// wants this right now" -- a slot whose owner crashed is reclaimed
+// immediately (see the main loop) rather than waiting out this grace period.
+constexpr auto kIdleGracePeriod = std::chrono::seconds(5);
 
 enum class Color { Red, Green, Blue };
 
@@ -104,7 +122,7 @@ void draw_mark(std::vector<std::uint8_t>& canvas, std::uint32_t w, std::uint32_t
 
 struct Slot
 {
-    std::unique_ptr<LLPublisher> pub;
+    std::unique_ptr<LLPublisher> pub; // null <=> this index is free
     std::vector<std::uint8_t>    canvas;
     std::uint32_t                width  = kDefaultWidth;
     std::uint32_t                height = kDefaultHeight;
@@ -112,7 +130,49 @@ struct Slot
     std::chrono::steady_clock::time_point next_regen;
     bool                          dirty  = true; // force one regen before the first publish
     bool                          had_subscriber = false; // edge-detects a new consumer claiming this slot
+
+    // Seeded when the slot is allocated and refreshed every tick a
+    // subscriber is attached; drives kIdleGracePeriod teardown. Deliberately
+    // NOT edge-based (unlike had_subscriber above) -- a slot that is
+    // allocated but never actually attached to (the requesting consumer
+    // crashed, or gave up after a reply timeout) has no true->false edge to
+    // time from, but does have an allocation time to time from.
+    std::chrono::steady_clock::time_point last_active;
 };
+
+// Stands in for spinning up whatever this slot's real instance is (a live
+// CEF renderer, in the motivating case); here it's just creating the
+// segment and resetting the canvas. Leaves s untouched on failure.
+bool allocate_slot(Slot& s, int index, LLConfig cfg, std::chrono::steady_clock::time_point now)
+{
+    cfg.name = kChannelPrefix + std::to_string(index);
+
+    LLStatus st{};
+    auto pub = LLPublisher::create(cfg, &st);
+    if (!pub) {
+        std::cerr << "slot " << index << " (" << cfg.name << "): " << to_string(st) << "\n";
+        return false;
+    }
+
+    s.pub            = std::move(pub);
+    s.canvas.assign(std::size_t(kDefaultWidth) * kDefaultHeight * 4, 0);
+    s.width           = kDefaultWidth;
+    s.height          = kDefaultHeight;
+    s.color           = Color::Green;
+    s.next_regen      = now;
+    s.dirty           = true;
+    s.had_subscriber  = false;
+    s.last_active     = now;
+    return true;
+}
+
+// Stands in for tearing down the real instance. Releases the canvas memory
+// too (not just clears it) -- an idle slot should not be holding onto
+// anything, which is the entire point of allocating on demand.
+void free_slot(Slot& s)
+{
+    s = Slot{};
+}
 
 } // namespace
 
@@ -126,31 +186,30 @@ int main(int argc, char** argv)
     std::signal(SIGTERM, on_signal);
     std::srand(static_cast<unsigned>(std::time(nullptr)));
 
-    std::vector<Slot> slots(static_cast<std::size_t>(slot_count));
-    std::uint64_t worst_case_bytes = 0;
+    LLConfig view_cfg; // template for whichever index gets allocated on demand
+    view_cfg.max_width  = kMaxWidth;
+    view_cfg.max_height = kMaxHeight;
+    const std::uint64_t worst_case_bytes = segment_bytes(view_cfg) * std::uint64_t(slot_count);
 
-    for (int i = 0; i < slot_count; ++i)
-    {
-        LLConfig cfg;
-        cfg.name       = kChannelPrefix + std::to_string(i);
-        cfg.max_width  = kMaxWidth;
-        cfg.max_height = kMaxHeight;
-        worst_case_bytes += segment_bytes(cfg);
+    std::vector<Slot> slots(static_cast<std::size_t>(slot_count)); // all start unallocated (pub == nullptr)
 
-        LLStatus st{};
-        slots[i].pub = LLPublisher::create(cfg, &st);
-        if (!slots[i].pub) {
-            std::cerr << "slot " << i << " (" << cfg.name << "): " << to_string(st) << "\n";
-            return 1;
-        }
-        slots[i].canvas.assign(std::size_t(kDefaultWidth) * kDefaultHeight * 4, 0);
-        slots[i].next_regen = std::chrono::steady_clock::now();
+    LLConfig control_cfg;
+    control_cfg.name       = kControlChannelName;
+    control_cfg.max_width  = 1; // never publishes a frame, only exchanges commands
+    control_cfg.max_height = 1;
+
+    LLStatus st{};
+    auto control = LLPublisher::create(control_cfg, &st);
+    if (!control) {
+        std::cerr << "control channel (" << control_cfg.name << "): " << to_string(st) << "\n";
+        return 1;
     }
 
-    std::cout << "multiview producer: " << slot_count << " channel(s) (" << kChannelPrefix << "0.."
-              << (slot_count - 1) << "), " << (worst_case_bytes / (1024 * 1024))
-              << " MiB worst case at " << kMaxWidth << "x" << kMaxHeight << " each, "
-              << (kDefaultWidth) << "x" << kDefaultHeight << " to start\n";
+    std::cout << "multiview producer: control channel ready, up to " << slot_count
+              << " concurrent view(s) (" << kChannelPrefix << "0.." << (slot_count - 1) << "), "
+              << (worst_case_bytes / (1024 * 1024)) << " MiB ceiling if all " << slot_count
+              << " were active at once at " << kMaxWidth << "x" << kMaxHeight << " each -- "
+              << "0 committed until requested\n";
 
     LLCommand cmd;
     auto next_publish = std::chrono::steady_clock::now();
@@ -159,12 +218,61 @@ int main(int argc, char** argv)
     {
         const auto now = std::chrono::steady_clock::now();
 
+        // Service slot requests first so a freshly-allocated slot gets a
+        // chance to regen/publish within this same tick.
+        while (control->receive(cmd))
+        {
+            if (cmd.type != kRequestSlot) continue;
+
+            int free_index = -1;
+            for (int i = 0; i < slot_count; ++i)
+                if (!slots[std::size_t(i)].pub) { free_index = i; break; }
+
+            if (free_index < 0 || !allocate_slot(slots[std::size_t(free_index)], free_index, view_cfg, now))
+            {
+                control->send(kSlotUnavailable, nullptr, 0, cmd.id);
+                continue;
+            }
+
+            // Reply only now that the segment demonstrably exists: the
+            // producer is single-threaded, so this command's own release
+            // store (below, inside send()) is ordered after every write
+            // allocate_slot() just made, including the new segment's own
+            // "release the magic last" store -- the requesting consumer's
+            // acquire-load of this reply therefore guarantees it will see
+            // a fully-initialised header once it opens that segment by name.
+            std::uint8_t payload[4];
+            pack_u32(payload, std::uint32_t(free_index));
+            control->send(kSlotAssigned, payload, 4, cmd.id);
+        }
+
         for (auto& s : slots)
         {
+            if (!s.pub) continue;
+
             const bool has_sub = s.pub->has_subscriber();
-            if (has_sub && !s.had_subscriber) {
-                s.color = random_color();
-                s.dirty = true;
+
+            if (has_sub && s.pub->command_owner_stale())
+            {
+                // Almost certainly a crashed consumer, not a merely-idle
+                // one: reclaim now rather than waiting out the softer idle
+                // grace period below.
+                free_slot(s);
+                continue;
+            }
+
+            if (has_sub)
+            {
+                if (!s.had_subscriber) {
+                    s.color = random_color();
+                    s.dirty = true;
+                }
+                s.last_active = now;
+            }
+            else if (now - s.last_active >= kIdleGracePeriod)
+            {
+                free_slot(s);
+                continue;
             }
             s.had_subscriber = has_sub;
 
@@ -217,7 +325,7 @@ int main(int argc, char** argv)
 
         if (now >= next_publish) {
             next_publish = now + kPublishPeriod;
-            for (auto& s : slots) s.pub->publish(s.canvas.data(), s.width, s.height);
+            for (auto& s : slots) if (s.pub) s.pub->publish(s.canvas.data(), s.width, s.height);
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1));

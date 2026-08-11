@@ -221,6 +221,8 @@ static void test_command_ownership_steal_after_crash()
     // Simulate a crash: no destructor runs, so the claim is never released
     // and its heartbeat simply stops advancing.
     (void)sub1.release();
+    CHECK(pub->has_subscriber());
+    CHECK(!pub->command_owner_stale()); // still fresh, moments after the "crash"
 
     // Arriving immediately, the claim still looks fresh: refused, same as
     // the ordinary single-owner case above.
@@ -230,11 +232,20 @@ static void test_command_ownership_steal_after_crash()
 
     std::this_thread::sleep_for(std::chrono::milliseconds(2200));
 
+    // Confirmed stale before anyone attempts to steal it -- this is the
+    // signal an application (see multiview_producer.cpp) can use to reclaim
+    // whatever it has tied to "someone is attached" without needing a new
+    // subscriber to show up and trigger a steal.
+    CHECK(pub->has_subscriber());
+    CHECK(pub->command_owner_stale());
+
     // Its heartbeat is now stale: the next attacher steals the channel
     // instead of being refused forever.
     auto sub3 = LLSubscriber::open(c.name);
     CHECK(sub3->connected());
     CHECK(sub3->owns_command_channel());
+    CHECK(pub->has_subscriber());
+    CHECK(!pub->command_owner_stale()); // fresh claim, not stale
 
     LLCommand in;
     CHECK(pub->receive(in)); // sub1's earlier send was still queued

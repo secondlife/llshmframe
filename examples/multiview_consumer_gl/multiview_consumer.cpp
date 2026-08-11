@@ -1,10 +1,19 @@
 #include "multiview_consumer.h"
 #include "../multiview_protocol.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 
 using namespace multiview_demo;
+
+namespace {
+    constexpr auto kControlClaimRetryInterval = std::chrono::milliseconds(50);
+    constexpr auto kControlClaimTimeout       = std::chrono::seconds(3); // > the library's ~2s steal window
+    constexpr auto kSlotRequestTimeout        = std::chrono::seconds(2);
+    constexpr auto kSlotReplyPollInterval     = std::chrono::milliseconds(5);
+}
 
 MultiviewConsumer::MultiviewConsumer() :
     mWindow(nullptr),
@@ -22,45 +31,90 @@ static void errorCallback(int error, const char* description)
     exit(1);
 }
 
-bool MultiviewConsumer::connectToProducer(int slot_count, const std::string& start_url)
+bool MultiviewConsumer::connectToProducer(const std::string& start_url)
 {
-    bool saw_any_producer = false;
-
-    for (int i = 0; i < slot_count; ++i)
+    // Claim the control channel. A losing race must destroy this
+    // LLSubscriber and open() a fresh one to retry -- poll() on an
+    // already-connected instance can never re-attempt the claim, it only
+    // re-validates the session it already has. A prior requester that
+    // crashed mid-request self-heals via the library's stale-heartbeat
+    // steal, so this retry loop just needs to outlast that (~2s) window.
+    std::unique_ptr<LLSubscriber> ctrl;
+    const auto claim_deadline = std::chrono::steady_clock::now() + kControlClaimTimeout;
+    for (;;)
     {
-        auto sub = LLSubscriber::open(kChannelPrefix + std::to_string(i));
-        if (!sub->connected()) continue;
-
-        saw_any_producer = true;
-        if (sub->owns_command_channel())
+        ctrl = LLSubscriber::open(kControlChannelName);
+        if (!ctrl->connected())
         {
-            // The producer always starts a channel at kDefaultWidth x
-            // kDefaultHeight, matching this class's constructor defaults, so
-            // there's nothing further to size here -- the window opens at
-            // that size and the first resizeCallback() reconciles it with
-            // whatever the OS actually grants the window.
-            mSub       = std::move(sub);
-            mSlotIndex = i;
-            std::cout << "connected to slot " << i << "\n";
-
-            // Stands in for the start URL a real CEF embedder always
-            // supplies when it creates a browser view -- sent immediately so
-            // the producer's first regeneration already reflects it rather
-            // than a placeholder default.
-            if (!start_url.empty())
-            {
-                std::cout << "-> kSetUrl " << start_url << "\n";
-                mSub->send_text(kSetUrl, start_url);
-            }
-            return true;
+            std::cerr << "no multiview producer found (is llshmframe_multiview_producer running?)\n";
+            return false;
         }
+        if (ctrl->owns_command_channel()) break;
+
+        if (std::chrono::steady_clock::now() >= claim_deadline)
+        {
+            std::cerr << "producer's control channel is busy, try again\n";
+            return false;
+        }
+        ctrl.reset();
+        std::this_thread::sleep_for(kControlClaimRetryInterval);
     }
 
-    if (!saw_any_producer)
-        std::cerr << "no multiview producer found (is llshmframe_multiview_producer running?)\n";
-    else
-        std::cerr << "producer is full: all " << slot_count << " channels are already claimed\n";
-    return false;
+    std::uint64_t req_id = 0;
+    if (!ctrl->send(kRequestSlot, nullptr, 0, 0, &req_id))
+    {
+        std::cerr << "failed to request a view from the producer\n";
+        return false;
+    }
+
+    LLCommand reply;
+    bool got_reply = false;
+    const auto reply_deadline = std::chrono::steady_clock::now() + kSlotRequestTimeout;
+    while (std::chrono::steady_clock::now() < reply_deadline)
+    {
+        if (ctrl->receive(reply) && reply.reply_to == req_id) { got_reply = true; break; }
+        std::this_thread::sleep_for(kSlotReplyPollInterval);
+    }
+    if (!got_reply)
+    {
+        std::cerr << "producer did not respond to the view request\n";
+        return false;
+    }
+
+    std::uint32_t index = 0;
+    if (reply.type != kSlotAssigned || !unpack_u32(reply.data.data(), reply.data.size(), index))
+    {
+        std::cerr << "producer has no free view right now\n";
+        return false;
+    }
+
+    ctrl.reset(); // release the control claim for the next requester
+
+    auto sub = LLSubscriber::open(kChannelPrefix + std::to_string(index));
+    if (!sub->connected() || !sub->owns_command_channel())
+    {
+        std::cerr << "view " << index << " was assigned but could not be claimed\n";
+        return false;
+    }
+
+    // The producer always starts a channel at kDefaultWidth x kDefaultHeight,
+    // matching this class's constructor defaults, so there's nothing further
+    // to size here -- the window opens at that size and the first
+    // resizeCallback() reconciles it with whatever the OS actually grants
+    // the window.
+    mSub       = std::move(sub);
+    mSlotIndex = int(index);
+    std::cout << "connected to slot " << mSlotIndex << "\n";
+
+    // Stands in for the start URL a real CEF embedder always supplies when
+    // it creates a browser view -- sent immediately so the producer's first
+    // regeneration already reflects it rather than a placeholder default.
+    if (!start_url.empty())
+    {
+        std::cout << "-> kSetUrl " << start_url << "\n";
+        mSub->send_text(kSetUrl, start_url);
+    }
+    return true;
 }
 
 void MultiviewConsumer::keyCallback(int key, int scancode, int action, int mods)
@@ -269,14 +323,10 @@ void MultiviewConsumer::reset()
 
 int main(int argc, char* argv[])
 {
-    int slot_count = kSlotCount;
-    if (argc > 1) slot_count = std::atoi(argv[1]);
-    if (slot_count <= 0) slot_count = 1;
-
-    const std::string start_url = argc > 2 ? argv[2] : "";
+    const std::string start_url = argc > 1 ? argv[1] : "";
 
     MultiviewConsumer app;
-    if (! app.connectToProducer(slot_count, start_url))
+    if (! app.connectToProducer(start_url))
     {
         return 1;
     }

@@ -205,6 +205,17 @@ public:
     // misses a clean detach followed by a fresh attach.
     bool has_subscriber() const;
 
+    // True while a command-channel claim exists and its heartbeat has gone
+    // quiet for the same window try_connect() uses to decide a steal (a
+    // couple of seconds) -- the current owner has almost certainly crashed
+    // without releasing it. Unlike has_subscriber(), this recomputes from
+    // the heartbeat every call rather than depending on some other
+    // subscriber actually attempting to attach and stealing it, so it
+    // never gets stuck reporting the wrong thing: check it yourself to
+    // reclaim resources tied to "someone is attached" without waiting for
+    // a new attacher to show up on this exact channel.
+    bool command_owner_stale() const;
+
 private:
     LLPublisher();
     struct Impl;

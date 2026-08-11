@@ -19,13 +19,26 @@ namespace multiview_demo
     inline constexpr std::uint32_t kMaxWidth      = 1920;
     inline constexpr std::uint32_t kMaxHeight     = 1080;
 
+    // Always-on, cheap (1x1 frame geometry -- it never publishes a frame,
+    // only exchanges commands) channel a consumer uses to ask the producer
+    // for one of the real per-view channels above, which the producer only
+    // creates once actually requested. See multiview_producer.cpp.
+    inline constexpr char kControlChannelName[] = "llshmframe_multiview_control";
+
     enum Opcode : std::uint32_t
     {
-        // consumer -> producer
+        // consumer -> producer, per-view channel
         kSetUrl      = 1, // text payload: "red" | "green" | "blue"
         kMouseMove   = 2, // data = {int32 x, int32 y}, canvas-space, little-endian
         kMouseButton = 3, // data = {int32 x, int32 y, uint8 button, uint8 action}
         kResize      = 4, // data = {uint32 width, uint32 height}
+
+        // consumer -> producer, control channel only
+        kRequestSlot     = 5, // empty payload
+
+        // producer -> consumer, control channel only; reply_to = request id
+        kSlotAssigned    = 6, // data = {uint32 slot index}
+        kSlotUnavailable = 7, // empty payload -- no free slot right now
     };
 
     inline std::uint32_t pack_i32x2(std::uint8_t* d, std::int32_t x, std::int32_t y)
@@ -81,6 +94,19 @@ namespace multiview_demo
         if (n < 8) return false;
         w = std::uint32_t(d[0]) | (std::uint32_t(d[1])<<8) | (std::uint32_t(d[2])<<16) | (std::uint32_t(d[3])<<24);
         h = std::uint32_t(d[4]) | (std::uint32_t(d[5])<<8) | (std::uint32_t(d[6])<<16) | (std::uint32_t(d[7])<<24);
+        return true;
+    }
+
+    inline std::uint32_t pack_u32(std::uint8_t* d, std::uint32_t v)
+    {
+        d[0]=std::uint8_t(v); d[1]=std::uint8_t(v>>8); d[2]=std::uint8_t(v>>16); d[3]=std::uint8_t(v>>24);
+        return 4;
+    }
+
+    inline bool unpack_u32(const std::uint8_t* d, std::size_t n, std::uint32_t& v)
+    {
+        if (n < 4) return false;
+        v = std::uint32_t(d[0]) | (std::uint32_t(d[1])<<8) | (std::uint32_t(d[2])<<16) | (std::uint32_t(d[3])<<24);
         return true;
     }
 }
