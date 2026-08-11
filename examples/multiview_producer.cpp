@@ -1,27 +1,28 @@
-// examples/cef_producer.cpp
+// examples/multiview_producer.cpp
 //
-// Stands in for a CEF-style render server: one process hosts a fixed pool of
-// independent "browser view" channels. Each channel is its own llshmframe
-// segment -- own frames, own commands -- because each consumer's clicks and
-// navigation only ever affect that one consumer's own content; there is
-// nothing to share between them.
+// One process hosts a fixed pool of independent "view" channels -- a CEF
+// embedder juggling several browser views is the motivating case, but
+// nothing here is CEF-specific. Each channel is its own llshmframe segment
+// -- own frames, own commands -- because each consumer's input only ever
+// affects that one consumer's own content; there is nothing to share
+// between them.
 //
-// Channel names: llshmframe_cef_0 .. llshmframe_cef_<slot_count - 1>.
+// Channel names: llshmframe_multiview_0 .. llshmframe_multiview_<slot_count - 1>.
 //
-//   llshmframe_cef_producer [slot_count]
+//   llshmframe_multiview_producer [slot_count]
 //
 // Restarting this process on Windows: if you kill and relaunch it while any
-// llshmframe_cef_consumer is still attached to one of its channels, that
-// channel will fail to (re)create with LLStatus::AlreadyExists until the
-// attached consumer(s) also exit. This is not a bug -- see "Windows" in the
-// top-level README -- windows_shared_memory ties a channel's name to a
+// llshmframe_multiview_consumer is still attached to one of its channels,
+// that channel will fail to (re)create with LLStatus::AlreadyExists until
+// the attached consumer(s) also exit. This is not a bug -- see "Windows" in
+// the top-level README -- windows_shared_memory ties a channel's name to a
 // kernel object that only dies once every handle referencing it, including
 // a still-running consumer's, is gone. The expectation here is that a
 // producer restart takes its consumers down with it; they are not meant to
 // sit and wait for it to come back.
 
 #include <shmframe/llshmframe.h>
-#include "cef_protocol.h"
+#include "multiview_protocol.h"
 
 #include <algorithm>
 #include <chrono>
@@ -35,7 +36,7 @@
 #include <thread>
 #include <vector>
 
-using namespace cef_demo;
+using namespace multiview_demo;
 
 namespace {
 
@@ -146,7 +147,7 @@ int main(int argc, char** argv)
         slots[i].next_regen = std::chrono::steady_clock::now();
     }
 
-    std::cout << "cef producer: " << slot_count << " channel(s) (" << kChannelPrefix << "0.."
+    std::cout << "multiview producer: " << slot_count << " channel(s) (" << kChannelPrefix << "0.."
               << (slot_count - 1) << "), " << (worst_case_bytes / (1024 * 1024))
               << " MiB worst case at " << kMaxWidth << "x" << kMaxHeight << " each, "
               << (kDefaultWidth) << "x" << kDefaultHeight << " to start\n";
@@ -222,6 +223,6 @@ int main(int argc, char** argv)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    std::cout << "cef producer: shutting down\n";
+    std::cout << "multiview producer: shutting down\n";
     return 0;
 }

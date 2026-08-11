@@ -1,12 +1,12 @@
-#include "cef_consumer.h"
-#include "../cef_protocol.h"
+#include "multiview_consumer.h"
+#include "../multiview_protocol.h"
 
 #include <cstdlib>
 #include <iostream>
 
-using namespace cef_demo;
+using namespace multiview_demo;
 
-CefConsumer::CefConsumer() :
+MultiviewConsumer::MultiviewConsumer() :
     mWindow(nullptr),
     mTextureWidth(kDefaultWidth),
     mTextureHeight(kDefaultHeight),
@@ -14,7 +14,7 @@ CefConsumer::CefConsumer() :
 {
 }
 
-CefConsumer::~CefConsumer() = default;
+MultiviewConsumer::~MultiviewConsumer() = default;
 
 static void errorCallback(int error, const char* description)
 {
@@ -22,7 +22,7 @@ static void errorCallback(int error, const char* description)
     exit(1);
 }
 
-bool CefConsumer::connectToProducer(int slot_count, const std::string& start_url)
+bool MultiviewConsumer::connectToProducer(int slot_count, const std::string& start_url)
 {
     bool saw_any_producer = false;
 
@@ -57,13 +57,13 @@ bool CefConsumer::connectToProducer(int slot_count, const std::string& start_url
     }
 
     if (!saw_any_producer)
-        std::cerr << "no cef producer found (is llshmframe_cef_producer running?)\n";
+        std::cerr << "no multiview producer found (is llshmframe_multiview_producer running?)\n";
     else
         std::cerr << "producer is full: all " << slot_count << " channels are already claimed\n";
     return false;
 }
 
-void CefConsumer::keyCallback(int key, int scancode, int action, int mods)
+void MultiviewConsumer::keyCallback(int key, int scancode, int action, int mods)
 {
     (void)scancode; (void)mods;
     if (action != GLFW_PRESS) return;
@@ -77,7 +77,7 @@ void CefConsumer::keyCallback(int key, int scancode, int action, int mods)
     else if (key == 'B') { std::cout << "-> kSetUrl blue\n";  mSub->send_text(kSetUrl, "blue");  }
 }
 
-void CefConsumer::mouseButtonCallback(int button, int action, int mods)
+void MultiviewConsumer::mouseButtonCallback(int button, int action, int mods)
 {
     (void)mods;
     double mx, my;
@@ -89,7 +89,7 @@ void CefConsumer::mouseButtonCallback(int button, int action, int mods)
     mSub->send(kMouseButton, payload, n);
 }
 
-void CefConsumer::mouseMoveCallback(double xpos, double ypos)
+void MultiviewConsumer::mouseMoveCallback(double xpos, double ypos)
 {
     // Coalesced, not sent here: GLFW can deliver far more of these than the
     // command ring should carry. sendPendingMouseMove() flushes at most one
@@ -99,7 +99,7 @@ void CefConsumer::mouseMoveCallback(double xpos, double ypos)
     mMoveDirty    = true;
 }
 
-void CefConsumer::sendPendingMouseMove()
+void MultiviewConsumer::sendPendingMouseMove()
 {
     if (!mMoveDirty) return;
     mMoveDirty = false;
@@ -109,7 +109,7 @@ void CefConsumer::sendPendingMouseMove()
     mSub->send(kMouseMove, payload, n);
 }
 
-void CefConsumer::resizeCallback(int width, int height)
+void MultiviewConsumer::resizeCallback(int width, int height)
 {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -142,7 +142,7 @@ void CefConsumer::resizeCallback(int width, int height)
     mSub->send(kResize, payload, n);
 }
 
-void CefConsumer::initGLFWCallbacks()
+void MultiviewConsumer::initGLFWCallbacks()
 {
     glfwSetKeyCallback(mWindow, keyCallbackStatic);
     glfwSetMouseButtonCallback(mWindow, mouseButtonCallbackStatic);
@@ -154,7 +154,7 @@ void CefConsumer::initGLFWCallbacks()
     resizeCallback(width, height);
 }
 
-void CefConsumer::init()
+void MultiviewConsumer::init()
 {
     if (! glfwInit())
     {
@@ -189,7 +189,7 @@ void CefConsumer::init()
     initGLFWCallbacks();
 }
 
-void CefConsumer::update()
+void MultiviewConsumer::update()
 {
     const bool connected_now = mSub->connected();
     if (connected_now != mWasConnected)
@@ -210,7 +210,7 @@ void CefConsumer::update()
     }
 }
 
-void CefConsumer::draw()
+void MultiviewConsumer::draw()
 {
     if (mHaveFrame)
     {
@@ -241,7 +241,7 @@ void CefConsumer::draw()
     glEnd();
 }
 
-void CefConsumer::run()
+void MultiviewConsumer::run()
 {
     while (! glfwWindowShouldClose(mWindow))
     {
@@ -257,7 +257,7 @@ void CefConsumer::run()
     }
 }
 
-void CefConsumer::reset()
+void MultiviewConsumer::reset()
 {
     glDeleteTextures(1, &mTextureId);
     mTextureId = 0;
@@ -275,7 +275,7 @@ int main(int argc, char* argv[])
 
     const std::string start_url = argc > 2 ? argv[2] : "";
 
-    CefConsumer app;
+    MultiviewConsumer app;
     if (! app.connectToProducer(slot_count, start_url))
     {
         return 1;

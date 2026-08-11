@@ -1,17 +1,19 @@
-// Application-level protocol for the CEF-style demo: one console producer
-// simulating N independent "browser views", each fed by its own GLFW/OpenGL
+// Application-level protocol for the multiview demo: one console producer
+// hosting N independent "view" channels, each fed by its own GLFW/OpenGL
 // consumer window. The library moves opaque bytes and knows nothing about
-// any of this -- it is ordinary application code.
+// any of this -- it is ordinary application code. A CEF-style embedder,
+// where each channel is one browser view, is the motivating case, but
+// nothing here is CEF-specific.
 #pragma once
 #include <cstddef>
 #include <cstdint>
 
-namespace cef_demo
+namespace multiview_demo
 {
     // Shared by the producer and every consumer so neither can drift out of
     // sync with the other about channel naming or default/maximum geometry.
     inline constexpr int           kSlotCount     = 32;
-    inline constexpr char          kChannelPrefix[] = "llshmframe_cef_";
+    inline constexpr char          kChannelPrefix[] = "llshmframe_multiview_";
     inline constexpr std::uint32_t kDefaultWidth  = 960;
     inline constexpr std::uint32_t kDefaultHeight = 540;
     inline constexpr std::uint32_t kMaxWidth      = 1920;

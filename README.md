@@ -191,7 +191,7 @@ section has actually exited, since a real crash — unlike an in-process leak
 **If your application needs the producer to be freely restartable (crash
 recovery, rolling deploys) while consumers stay up and simply wait, this is
 not something to work around by polling or retrying `create()` — on Windows
-it will not resolve until the last consumer lets go.** The `examples/cef_*`
+it will not resolve until the last consumer lets go.** The `examples/multiview_*`
 demo takes the position that this is acceptable: if the producer dies,
 consumers are expected to notice (`connected()` goes false, or
 `producer_responsive()` does) and exit or restart rather than wait

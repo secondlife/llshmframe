@@ -4,10 +4,15 @@ project(llshmframe VERSION 1.0.0 LANGUAGES CXX C) # C is only for the vendored g
 option(LLSHMFRAME_SHARED         "Build llshmframe as a shared library" OFF)
 option(LLSHMFRAME_BUILD_EXAMPLES "Build example executables"            ON)
 option(LLSHMFRAME_BUILD_TESTS    "Build tests"                          ON)
-option(LLSHMFRAME_BUILD_GL_EXAMPLE "Build the GLFW/OpenGL CEF-demo consumer (Windows only)" ${WIN32})
+option(LLSHMFRAME_BUILD_GL_EXAMPLE "Build the GLFW/OpenGL multiview demo consumer (Windows only)" ${WIN32})
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
+
+# Lets set_target_properties(... PROPERTIES FOLDER ...) below group targets
+# into Solution Explorer folders on generators that support it (Visual
+# Studio, Xcode); a silent no-op elsewhere.
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # local subset of Boost headers - no libs needed
 set(Boost_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/third-party/boost_1_91_0/")
@@ -88,28 +93,39 @@ if(LLSHMFRAME_BUILD_EXAMPLES)
     target_include_directories(llshmframe_receiver PRIVATE examples)
     target_include_directories(llshmframe_minimal  PRIVATE examples)
 
+    # Solution Explorer folder, kept apart from the llshmframe library
+    # target itself and from the more elaborate multiview demo below.
+    set_target_properties(llshmframe_sender llshmframe_receiver llshmframe_minimal
+        PROPERTIES FOLDER "Examples")
+
     # Console producer: plain portable C++, no GL/windowing dependency, so
     # it builds everywhere the library itself does.
-    add_executable(llshmframe_cef_producer examples/cef_producer.cpp)
-    target_link_libraries(llshmframe_cef_producer PRIVATE llshmframe::llshmframe)
-    target_include_directories(llshmframe_cef_producer PRIVATE examples)
+    add_executable(llshmframe_multiview_producer examples/multiview_producer.cpp)
+    target_link_libraries(llshmframe_multiview_producer PRIVATE llshmframe::llshmframe)
+    target_include_directories(llshmframe_multiview_producer PRIVATE examples)
+    set_target_properties(llshmframe_multiview_producer PROPERTIES FOLDER "Examples/Multiview")
 
     if(WIN32 AND LLSHMFRAME_BUILD_GL_EXAMPLE)
         set(GLAD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/glad-0.1.36")
         set(GLFW_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/glfw-3.4.bin.WIN64")
 
-        add_executable(llshmframe_cef_consumer
-            examples/cef_consumer_gl/cef_consumer.cpp
-            examples/cef_consumer_gl/cef_consumer.h
+        add_executable(llshmframe_multiview_consumer
+            examples/multiview_consumer_gl/multiview_consumer.cpp
+            examples/multiview_consumer_gl/multiview_consumer.h
             ${GLAD_DIR}/src/glad.c)
-        target_include_directories(llshmframe_cef_consumer PRIVATE
+        target_include_directories(llshmframe_multiview_consumer PRIVATE
             examples
             ${GLAD_DIR}/include
             ${GLFW_DIR}/include)
-        target_link_libraries(llshmframe_cef_consumer PRIVATE
+        target_link_libraries(llshmframe_multiview_consumer PRIVATE
             llshmframe::llshmframe
             ${GLFW_DIR}/lib-vc2022/glfw3.lib
             opengl32)
+        set_target_properties(llshmframe_multiview_consumer PROPERTIES FOLDER "Examples/Multiview")
+
+        # Keeps the vendored GL loader out of the way of this demo's own two
+        # files in Solution Explorer's per-project file list.
+        source_group("Third-Party" FILES ${GLAD_DIR}/src/glad.c)
     endif()
 endif()
 
@@ -150,3 +166,12 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/llshmframeConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/llshmframeConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/llshmframe)
+
+set(CMAKE_CONFIGURATION_TYPES "Release")
+
+set_property(
+  DIRECTORY
+  PROPERTY
+  VS_STARTUP_PROJECT
+  llshmframe_multiview_producer
+)

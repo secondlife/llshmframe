@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-// GLFW/OpenGL consumer for the CEF-style demo: probes the producer's fixed
+// GLFW/OpenGL consumer for the multiview demo: probes the producer's fixed
 // channel pool, claims one, and displays whatever it publishes as a single
 // textured quad -- adapted from a plain local-pattern GLFW/OpenGL skeleton,
 // with the pattern generation replaced by LLSubscriber::read_latest() and
@@ -30,12 +30,12 @@
 // its own. On Windows in particular, an old instance left running is exactly
 // what blocks the producer from reclaiming its channel on restart -- see
 // "Windows" in the top-level README.
-class CefConsumer {
+class MultiviewConsumer {
     public:
-        CefConsumer();
-        ~CefConsumer();
+        MultiviewConsumer();
+        ~MultiviewConsumer();
 
-        // Probes llshmframe_cef_0.. for a channel nobody else has claimed,
+        // Probes llshmframe_multiview_0.. for a channel nobody else has claimed,
         // then sends start_url as this view's initial kSetUrl if non-empty.
         // Must succeed before init()/run() are called.
         bool connectToProducer(int slot_count, const std::string& start_url = "");
@@ -56,7 +56,7 @@ class CefConsumer {
         void sendPendingMouseMove();
 
         GLFWwindow* mWindow;
-        const std::string mWindowTitle = "llshmframe CEF Consumer";
+        const std::string mWindowTitle = "llshmframe Multiview Consumer";
         GLuint mTextureWidth;
         GLuint mTextureHeight;
         GLuint mTextureId;
@@ -73,15 +73,15 @@ class CefConsumer {
 
         // Used to marshall static function callbacks to a instance of the app class
         static void resizeCallbackStatic(GLFWwindow* window, int width, int height) {
-            static_cast<CefConsumer*>(glfwGetWindowUserPointer(window))->resizeCallback(width, height);
+            static_cast<MultiviewConsumer*>(glfwGetWindowUserPointer(window))->resizeCallback(width, height);
         }
         static void keyCallbackStatic(GLFWwindow* window, int key, int scancode, int action, int mods) {
-            static_cast<CefConsumer*>(glfwGetWindowUserPointer(window))->keyCallback(key, scancode, action, mods);
+            static_cast<MultiviewConsumer*>(glfwGetWindowUserPointer(window))->keyCallback(key, scancode, action, mods);
         }
         static void mouseButtonCallbackStatic(GLFWwindow* window, int button, int action, int mods) {
-            static_cast<CefConsumer*>(glfwGetWindowUserPointer(window))->mouseButtonCallback(button, action, mods);
+            static_cast<MultiviewConsumer*>(glfwGetWindowUserPointer(window))->mouseButtonCallback(button, action, mods);
         }
         static void mouseMoveCallbackStatic(GLFWwindow* window, double xpos, double ypos) {
-            static_cast<CefConsumer*>(glfwGetWindowUserPointer(window))->mouseMoveCallback(xpos, ypos);
+            static_cast<MultiviewConsumer*>(glfwGetWindowUserPointer(window))->mouseMoveCallback(xpos, ypos);
         }
 };
