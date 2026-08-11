@@ -244,6 +244,63 @@ static void test_command_ownership_steal_after_crash()
     CHECK(in.text() == "from sub3");
 }
 
+static void test_clean_disconnect_slot_reuse()
+{
+    std::printf("clean disconnect: command channel and frames are reused\n");
+    LLConfig c; c.name = "sf_test_o"; c.max_width = 32; c.max_height = 32;
+
+    auto pub = LLPublisher::create(c);
+    CHECK(pub != nullptr); if (!pub) return;
+    CHECK(!pub->has_subscriber());
+
+    // Consumer A joins, reads a published frame, and exchanges a command.
+    auto subA = LLSubscriber::open(c.name);
+    CHECK(subA->connected());
+    CHECK(subA->owns_command_channel());
+    CHECK(pub->has_subscriber());
+    const std::uint64_t session_before = subA->session_id();
+
+    std::vector<std::uint8_t> canvas_a(32u * 32u * 4u, 0x11);
+    CHECK(pub->publish(canvas_a.data(), 32, 32));
+
+    std::vector<std::uint8_t> buf;
+    LLFrameInfo info;
+    CHECK(subA->read_latest(buf, info) == LLReadResult::Ok);
+    CHECK(subA->send_text(1, "hello from A"));
+
+    LLCommand in;
+    CHECK(pub->receive(in));
+    CHECK(in.text() == "hello from A");
+
+    // A disconnects cleanly: its destructor runs and releases the claim.
+    subA.reset();
+    CHECK(!pub->has_subscriber());
+
+    // The producer does not pause or reset anything just because the slot
+    // is momentarily empty -- it keeps publishing regardless of who, if
+    // anyone, is attached.
+    std::vector<std::uint8_t> canvas_b(32u * 32u * 4u, 0x22);
+    CHECK(pub->publish(canvas_b.data(), 32, 32));
+
+    // Consumer B joins afterwards: same producer session (not a restart),
+    // same slot, a fresh claim rather than a refusal.
+    auto subB = LLSubscriber::open(c.name);
+    CHECK(subB->connected());
+    CHECK(subB->session_id() == session_before);
+    CHECK(subB->owns_command_channel());
+    CHECK(pub->has_subscriber()); // clean detach then fresh attach: a real false -> true edge
+
+    // B sees the frame published while the slot was empty immediately --
+    // no per-consumer setup or replay needed, since frames were never
+    // gated on anyone being attached.
+    CHECK(subB->read_latest(buf, info) == LLReadResult::Ok);
+    CHECK(buf[0] == 0x22);
+
+    CHECK(subB->send_text(2, "hello from B"));
+    CHECK(pub->receive(in));
+    CHECK(in.text() == "hello from B");
+}
+
 static void test_commands_bidirectional()
 {
     std::printf("bidirectional commands\n");
@@ -510,6 +567,7 @@ int main()
     test_stale_producer_reclaimed();
     test_command_ownership();
     test_command_ownership_steal_after_crash();
+    test_clean_disconnect_slot_reuse();
     test_commands_bidirectional();
     test_concurrent_no_tearing();
     test_producer_restart();
