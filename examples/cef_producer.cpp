@@ -28,6 +28,7 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -51,6 +52,12 @@ Color color_from_text(std::string_view s)
     if (s == "red")  return Color::Red;
     if (s == "blue") return Color::Blue;
     return Color::Green;
+}
+
+Color random_color()
+{
+    constexpr Color cols[] = {Color::Red, Color::Green, Color::Blue};
+    return cols[std::rand() % 3];
 }
 
 // Same checkerboard shape as the original GLFW skeleton this demo grew out
@@ -103,6 +110,7 @@ struct Slot
     Color                        color  = Color::Green;
     std::chrono::steady_clock::time_point next_regen;
     bool                          dirty  = true; // force one regen before the first publish
+    bool                          had_subscriber = false; // edge-detects a new consumer claiming this slot
 };
 
 } // namespace
@@ -115,6 +123,7 @@ int main(int argc, char** argv)
 
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
+    std::srand(static_cast<unsigned>(std::time(nullptr)));
 
     std::vector<Slot> slots(static_cast<std::size_t>(slot_count));
     std::uint64_t worst_case_bytes = 0;
@@ -151,6 +160,13 @@ int main(int argc, char** argv)
 
         for (auto& s : slots)
         {
+            const bool has_sub = s.pub->has_subscriber();
+            if (has_sub && !s.had_subscriber) {
+                s.color = random_color();
+                s.dirty = true;
+            }
+            s.had_subscriber = has_sub;
+
             while (s.pub->receive(cmd))
             {
                 switch (cmd.type)

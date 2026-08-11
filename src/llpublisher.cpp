@@ -299,3 +299,8 @@ std::uint64_t LLPublisher::commands_received() const { return d_->recvd; }
 std::uint64_t LLPublisher::commands_dropped() const  { return d_->dropped; }
 std::uint32_t LLPublisher::outbound_pending() const  { return d_->tx.pending(); }
 const LLConfig& LLPublisher::config() const          { return d_->cfg; }
+
+bool LLPublisher::has_subscriber() const
+{
+    return d_->hdr && d_->hdr->command_owner.load(std::memory_order_acquire) != 0;
+}

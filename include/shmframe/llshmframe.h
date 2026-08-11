@@ -190,6 +190,14 @@ public:
     std::uint32_t outbound_pending() const;
     const LLConfig& config() const;
 
+    // True once some LLSubscriber has claimed the command channel for the
+    // current session, false again once it cleanly detaches (see
+    // LLSubscriber::owns_command_channel()). Since the command channel is
+    // single-subscriber, this doubles as "is anyone attached" -- useful for
+    // reacting to a consumer joining without threading your own bookkeeping
+    // through the command stream.
+    bool has_subscriber() const;
+
 private:
     LLPublisher();
     struct Impl;
