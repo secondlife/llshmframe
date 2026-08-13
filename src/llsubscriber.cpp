@@ -208,15 +208,26 @@ bool LLSubscriber::poll()
     // path and costs one subtraction.
     if (m.hdr && (now - m.last_progress) < m.stale_ns) return true;
 
-    // Quiet or detached. Being quiet is not proof of being orphaned -- the
-    // producer may simply be idle -- so re-open by name and let the
-    // session id decide. Rate-limited so this cannot become a hot loop.
-    if ((now - m.last_attempt) < m.retry_ns) return m.hdr != nullptr;
+    // Quiet. Being quiet is not proof of being orphaned -- the producer may
+    // simply be idle -- so check its actual heartbeat before assuming
+    // anything is wrong, rather than trusting that the mapping is still
+    // valid: on Windows (and similarly elsewhere) a named shared-memory
+    // mapping stays open as long as we ourselves still hold it, even long
+    // after the producer that created it has died without a clean shutdown
+    // -- so re-opening the same name below and finding the same session_id
+    // (see try_connect()'s own "keep the current mapping" fast path) proves
+    // nothing about whether that producer is actually still running. Only
+    // the heartbeat does, which is why this function returns
+    // producer_responsive() rather than "m.hdr != nullptr" everywhere below.
+    if (producer_responsive()) return true;
+
+    // Rate-limited so this cannot become a hot loop.
+    if ((now - m.last_attempt) < m.retry_ns) return false;
     m.last_attempt = now;
 
     m.try_connect();
     m.last_progress = now; // reset the clock either way
-    return m.hdr != nullptr;
+    return producer_responsive();
 }
 
 // ------------------------------------------------------------- frames
