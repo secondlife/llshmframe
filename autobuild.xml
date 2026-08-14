@@ -45,6 +45,7 @@
           <array>
             <string>LICENSES/LICENSE</string>
             <string>include/shmframe/llshmframe.h</string>
+            <string>include/shmframe/llShmFrameVersion.h</string>
           </array>
           <key>name</key>
           <string>common</string>

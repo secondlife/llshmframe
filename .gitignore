@@ -3,3 +3,4 @@ build/
 stage/
 *.tar.bz2
 *.tar.zst
+include/shmframe/llShmFrameVersion.h

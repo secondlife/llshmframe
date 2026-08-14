@@ -14,6 +14,27 @@ include(CMakePackageConfigHelpers)
 # Studio, Xcode); a silent no-op elsewhere.
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+# ==============================================================================
+# Populate the version header from the template using git params, same
+# mechanism as llcefbrowser's llCefBrowserVersion.h.in -- MINOR tracks commit
+# count automatically, so it never needs remembering to bump by hand.
+#
+file(REMOVE "${PROJECT_SOURCE_DIR}/include/shmframe/llShmFrameVersion.h")
+execute_process(
+  COMMAND git rev-list HEAD --count
+  OUTPUT_VARIABLE GIT_COMMIT_COUNT
+  OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET
+)
+execute_process(
+  COMMAND git rev-parse --short HEAD
+  OUTPUT_VARIABLE GIT_COMMIT_HASH
+  OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET
+)
+configure_file(
+  "${PROJECT_SOURCE_DIR}/include/shmframe/llShmFrameVersion.h.in"
+  "${PROJECT_SOURCE_DIR}/include/shmframe/llShmFrameVersion.h"
+)
+
 # local subset of Boost headers - no libs needed. CMAKE_CURRENT_SOURCE_DIR,
 # not CMAKE_SOURCE_DIR: this must resolve relative to this file even when
 # llshmframe is add_subdirectory()'d from a parent project, not just when
