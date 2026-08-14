@@ -6,7 +6,7 @@
     <key>package_description</key>
     <map>
       <key>canonical_repo</key>
-      <string>https://github.com/callumlinden/llshmframe</string>
+      <string>https://github.com/secondlife/llshmframe</string>
       <key>copyright</key>
       <string>Copyright (C) 2023, Linden Research, Inc.</string>
       <key>description</key>
