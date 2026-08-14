@@ -1,0 +1,28 @@
+name: Build
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: [v*]
+jobs:
+  build:
+    strategy:
+      matrix:
+        # windows-2022 only for now -- build-cmd.sh doesn't yet build darwin/linux,
+        # see its own comment there for why.
+        os: [windows-2022]
+        addrsize: ["64"]
+    continue-on-error: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: secondlife/action-autobuild@v5
+        with:
+          addrsize: ${{ matrix.addrsize }}
+  release:
+    needs: build
+    runs-on: [ubuntu-latest]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: secondlife/action-autobuild-release@v3
+        with:
+          public: true

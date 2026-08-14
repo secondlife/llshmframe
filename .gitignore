@@ -1,2 +1,5 @@
 .DS_Store
 build/
+stage/
+*.tar.bz2
+*.tar.zst
