@@ -53,11 +53,21 @@ namespace detail
     // How long the current command-channel owner's heartbeat may go quiet
     // before a newly-attaching LLSubscriber treats it as crashed (rather
     // than just idle) and steals the channel instead of being refused
-    // forever. Mirrors LLConfig::stale_producer_ms's default magnitude;
-    // not user-configurable yet because the decision is made inside
-    // LLSubscriber::open(), before the caller has a returned object to
-    // configure it through.
-    inline constexpr std::uint64_t kCommandOwnerStaleNs = 2'000'000'000ull;
+    // forever -- and, symmetrically, before the producer's own
+    // command_owner_stale() treats an existing subscriber as crashed and
+    // reclaims its slot. Originally 2s; raised to 8s (2026-08-19) after a
+    // real-world case where a busy region with many concurrent media
+    // instances started legitimately starving individual tabs' own
+    // per-thread heartbeat refresh for longer than 2s under CPU contention,
+    // which made the producer wrongly reclaim a slot a perfectly healthy
+    // (just slow) consumer still held -- the freed index then permanently
+    // collided with that consumer's still-live, now-orphaned mapping on
+    // every subsequent allocation attempt (see LLSegment::unlink()'s own
+    // comment: nothing actually frees the segment until every holder,
+    // including that confused consumer, releases it). Not user-configurable
+    // yet because the decision is made inside LLSubscriber::open(), before
+    // the caller has a returned object to configure it through.
+    inline constexpr std::uint64_t kCommandOwnerStaleNs = 8'000'000'000ull;
 
     // Keeps width * bytes_per_pixel (32-bit) and
     // max_width * max_height * bytes_per_pixel (64-bit) comfortably clear of
