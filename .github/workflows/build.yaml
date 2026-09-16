@@ -8,9 +8,12 @@ jobs:
   build:
     strategy:
       matrix:
-        # windows-2022 only for now -- build-cmd.sh doesn't yet build darwin/linux,
-        # see its own comment there for why.
-        os: [windows-2022]
+        # macOS-first port (2026-09): build-cmd.sh now builds darwin/linux too,
+        # each with a real local build+test pass behind it -- see its own
+        # comments for why. windows-2022 stays the only actually-shipping
+        # platform; ubuntu-latest/macos-latest exist for CI-verified porting
+        # confidence, not (yet) a real release target.
+        os: [windows-2022, ubuntu-latest, macos-latest]
         addrsize: ["64"]
     continue-on-error: true
     runs-on: ${{ matrix.os }}

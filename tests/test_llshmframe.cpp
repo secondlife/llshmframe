@@ -257,7 +257,8 @@ static void test_command_ownership_steal_after_crash()
     CHECK(sub2->connected());
     CHECK(!sub2->owns_command_channel());
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(2200));
+    // kCommandOwnerStaleNs is 8s (llinternal.h); wait past it with margin.
+    std::this_thread::sleep_for(std::chrono::milliseconds(8200));
 
     // Confirmed stale before anyone attempts to steal it -- this is the
     // signal an application (see multiview_producer.cpp) can use to reclaim

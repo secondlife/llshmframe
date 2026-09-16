@@ -64,11 +64,38 @@ case "$AUTOBUILD_PLATFORM" in
         echo "${ver_major}.${ver_minor}.0" > "$stage/VERSION.txt"
     ;;
     darwin*|linux*)
-        # Not yet built/tested on this platform -- windows64 is the only
-        # platform actually exercised by the embedded-browser project so
-        # far. Follow the windows branch's pattern (plain CMake configure +
-        # install into $stage, same VERSION.txt/LICENSES handling) once
-        # there's a real need to build here.
-        exit 1
+        # darwin builds universal (arm64;x86_64), matching the Viewer's own
+        # CMAKE_OSX_ARCHITECTURES (indra/cmake/Variables.cmake) -- llshmframe
+        # has no per-arch prebuilt dependency (unlike llcefbrowser/CEF), so a
+        # single configure/build produces a universal static lib with no
+        # lipo step needed.
+        extra_args=""
+        if [[ "$AUTOBUILD_PLATFORM" == darwin* ]] ; then
+            export MACOSX_DEPLOYMENT_TARGET="$LL_BUILD_DARWIN_DEPLOY_TARGET"
+            extra_args="-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET"
+        fi
+
+        cd "$stage"
+        cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$stage" \
+            -DCMAKE_INSTALL_LIBDIR=lib/release \
+            -DCMAKE_CXX_FLAGS="$LL_BUILD_RELEASE" \
+            -DLLSHMFRAME_BUILD_EXAMPLES=OFF \
+            -DLLSHMFRAME_BUILD_TESTS=OFF \
+            $(cmake_cxx_standard $LL_BUILD_RELEASE) \
+            $extra_args
+
+        cmake --build . --target llshmframe --parallel $AUTOBUILD_CPU_COUNT
+        cmake --install .
+
+        cd "$top"
+        mkdir -p "$stage/LICENSES"
+        cp "$top/LICENSE" "$stage/LICENSES/"
+
+        # populate version_file -- same approach as the windows branch above
+        ver_major="$(grep -oE 'LLSHMFRAME_VERSION_MAJOR [0-9]+' "$top/include/shmframe/llShmFrameVersion.h" | cut -d' ' -f2)"
+        ver_minor="$(grep -oE 'LLSHMFRAME_VERSION_MINOR [0-9]+' "$top/include/shmframe/llShmFrameVersion.h" | cut -d' ' -f2)"
+        echo "${ver_major}.${ver_minor}.0" > "$stage/VERSION.txt"
     ;;
 esac

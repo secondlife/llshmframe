@@ -72,6 +72,50 @@
           <key>name</key>
           <string>windows64</string>
         </map>
+        <key>darwin64</key>
+        <map>
+          <key>configurations</key>
+          <map>
+            <key>Release</key>
+            <map>
+              <key>build</key>
+              <map>
+              </map>
+              <key>default</key>
+              <boolean>true</boolean>
+              <key>name</key>
+              <string>Release</string>
+            </map>
+          </map>
+          <key>manifest</key>
+          <array>
+            <string>lib/release/*</string>
+          </array>
+          <key>name</key>
+          <string>darwin64</string>
+        </map>
+        <key>linux64</key>
+        <map>
+          <key>configurations</key>
+          <map>
+            <key>Release</key>
+            <map>
+              <key>build</key>
+              <map>
+              </map>
+              <key>default</key>
+              <boolean>true</boolean>
+              <key>name</key>
+              <string>Release</string>
+            </map>
+          </map>
+          <key>manifest</key>
+          <array>
+            <string>lib/release/*</string>
+          </array>
+          <key>name</key>
+          <string>linux64</string>
+        </map>
       </map>
       <key>source_directory</key>
       <string>src</string>
