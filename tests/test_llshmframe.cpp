@@ -220,7 +220,7 @@ static void test_command_ownership()
     CHECK(sub1->send_text(1, "from sub1"));
     CHECK(!sub2->send_text(1, "from sub2")); // refused, not corrupting the ring
 
-    LLCommand in;
+    LLShmCommand in;
     CHECK(pub->receive(in));
     CHECK(in.text() == "from sub1");
     CHECK(!pub->receive(in)); // sub2's send never went anywhere
@@ -275,7 +275,7 @@ static void test_command_ownership_steal_after_crash()
     CHECK(pub->has_subscriber());
     CHECK(!pub->command_owner_stale()); // fresh claim, not stale
 
-    LLCommand in;
+    LLShmCommand in;
     CHECK(pub->receive(in)); // sub1's earlier send was still queued
     CHECK(in.text() == "from sub1");
     CHECK(sub3->send_text(2, "from sub3"));
@@ -307,7 +307,7 @@ static void test_clean_disconnect_slot_reuse()
     CHECK(subA->read_latest(buf, info) == LLReadResult::Ok);
     CHECK(subA->send_text(1, "hello from A"));
 
-    LLCommand in;
+    LLShmCommand in;
     CHECK(pub->receive(in));
     CHECK(in.text() == "hello from A");
 
@@ -351,7 +351,7 @@ static void test_commands_bidirectional()
     auto sub = LLSubscriber::open(c.name);
     CHECK(sub->connected());
 
-    LLCommand in;
+    LLShmCommand in;
     std::uint64_t id = 0;
     CHECK(sub->send_text(42, "hello", 0, &id));
     CHECK(id == 1);
@@ -550,7 +550,7 @@ static void test_rate_limiting()
     CHECK(throttled_reads > 1000);
 
     // Commands must stay at full rate even while frame reads are throttled.
-    LLCommand in;
+    LLShmCommand in;
     CHECK(sub->send_text(77, "urgent"));
     CHECK(pub->receive(in));
     CHECK(in.text() == "urgent");
@@ -591,7 +591,7 @@ static void test_slow_consumer_command_backpressure()
     CHECK(fi.frame_id == 100);
 
     // Every accepted command survived intact and in order.
-    LLCommand in; long drained = 0;
+    LLShmCommand in; long drained = 0;
     while (sub->receive(in)) { CHECK(in.id == std::uint64_t(drained + 1)); ++drained; }
     CHECK(drained == 8);
 }

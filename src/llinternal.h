@@ -321,7 +321,7 @@ namespace detail
             return true;
         }
 
-        bool pop(LLCommand& out)
+        bool pop(LLShmCommand& out)
         {
             if (!valid()) return false;
 

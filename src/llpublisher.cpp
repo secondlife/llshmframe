@@ -290,7 +290,7 @@ bool LLPublisher::send_text(std::uint32_t type, std::string_view text,
                 reply_to, out_id);
 }
 
-bool LLPublisher::receive(LLCommand& out)
+bool LLPublisher::receive(LLShmCommand& out)
 {
     if (!d_->hdr || !d_->rx.pop(out)) return false;
     ++d_->recvd;

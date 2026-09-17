@@ -61,7 +61,7 @@ int main(int argc, char** argv)
 
     std::vector<std::uint8_t> buf;
     LLFrameInfo info;
-    LLCommand   cmd;
+    LLShmCommand   cmd;
 
     const auto period = std::chrono::nanoseconds(1'000'000'000LL / hz);
     auto next = std::chrono::steady_clock::now();

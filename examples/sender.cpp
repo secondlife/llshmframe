@@ -86,7 +86,7 @@ int main(int argc, char** argv)
     auto next = std::chrono::steady_clock::now();
     auto report = next;
     std::uint64_t since = 0;
-    LLCommand cmd;
+    LLShmCommand cmd;
 
     while (g_run)
     {

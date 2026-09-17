@@ -238,7 +238,7 @@ int main(int argc, char** argv)
               << " were active at once at " << kMaxWidth << "x" << kMaxHeight << " each -- "
               << "0 committed until requested\n";
 
-    LLCommand cmd;
+    LLShmCommand cmd;
     auto next_publish = std::chrono::steady_clock::now();
 
     while (g_run)

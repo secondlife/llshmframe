@@ -94,7 +94,7 @@ bool MultiviewConsumer::connectToProducer(const std::string& start_url)
         return false;
     }
 
-    LLCommand reply;
+    LLShmCommand reply;
     bool got_reply = false;
     const auto reply_deadline = std::chrono::steady_clock::now() + kSlotRequestTimeout;
     while (std::chrono::steady_clock::now() < reply_deadline)

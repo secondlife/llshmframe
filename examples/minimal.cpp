@@ -107,7 +107,7 @@ int main()
     std::uint64_t id = 0;
     sub->send_text(kHello, "hello from the consumer", 0, &id);
 
-    LLCommand cmd;
+    LLShmCommand cmd;
     while (pub->receive(cmd))
     {
         std::printf("producer received #%llu: '%.*s'\n",

@@ -119,7 +119,7 @@ struct LLFrameInfo
     std::uint32_t payload_bytes = 0;
 };
 
-struct LLCommand
+struct LLShmCommand
 {
     std::uint64_t             id           = 0; // monotonic per sender
     std::uint64_t             reply_to     = 0; // id this answers, or 0
@@ -206,7 +206,7 @@ public:
                    std::uint64_t  reply_to = 0,
                    std::uint64_t* out_id   = nullptr);
 
-    bool receive(LLCommand& out); // false when the queue is empty
+    bool receive(LLShmCommand& out); // false when the queue is empty
 
     // --- info ---------------------------------------------------------
     std::uint64_t frames_published() const;
@@ -300,7 +300,7 @@ public:
                    std::uint64_t  reply_to = 0,
                    std::uint64_t* out_id   = nullptr);
 
-    bool receive(LLCommand& out);
+    bool receive(LLShmCommand& out);
     bool owns_command_channel() const;
 
     // --- info ---------------------------------------------------------

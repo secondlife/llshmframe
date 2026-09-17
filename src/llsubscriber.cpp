@@ -365,7 +365,7 @@ bool LLSubscriber::send_text(std::uint32_t type, std::string_view text,
                 reply_to, out_id);
 }
 
-bool LLSubscriber::receive(LLCommand& out)
+bool LLSubscriber::receive(LLShmCommand& out)
 {
     Impl& m = *d_;
     if (!m.hdr || !m.still_owns_commands()) return false;
