@@ -11,9 +11,18 @@ jobs:
         # macOS-first port (2026-09): build-cmd.sh now builds darwin/linux too,
         # each with a real local build+test pass behind it -- see its own
         # comments for why. windows-2022 stays the only actually-shipping
-        # platform; ubuntu-latest/macos-latest exist for CI-verified porting
+        # platform; ubuntu-22.04/macos-latest exist for CI-verified porting
         # confidence, not (yet) a real release target.
-        os: [windows-2022, ubuntu-latest, macos-latest]
+        #
+        # ubuntu-22.04, not ubuntu-latest: the Viewer's own Linux CI targets
+        # ubuntu-22.04 specifically (an older GCC/libstdc++ than whatever
+        # ubuntu-latest currently resolves to). A package built with a newer
+        # GCC can reference libstdc++ symbols (e.g. std::string's
+        # _M_replace_cold, GCC 12+ only) that an older consumer's link step
+        # can't find -- confirmed the hard way via a real Viewer Linux link
+        # failure. Packages need to build on the *oldest* toolchain any real
+        # consumer targets, never a newer one.
+        os: [windows-2022, ubuntu-22.04, macos-latest]
         addrsize: ["64"]
     continue-on-error: true
     runs-on: ${{ matrix.os }}
