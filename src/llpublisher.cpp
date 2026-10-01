@@ -109,7 +109,7 @@ std::unique_ptr<LLPublisher> LLPublisher::create(const LLConfig& cfg, LLStatus* 
         seg = LLSegment::create(cfg.name, L.total_size, exists);
     }
 
-    if (!seg) return fail(exists ? LLStatus::AlreadyExists : LLStatus::MappingFailed);
+    if (!seg) return fail(exists ? LLStatus::AlreadyExists : LLStatus::MappingFailure);
 
     void* base = seg->address();
 

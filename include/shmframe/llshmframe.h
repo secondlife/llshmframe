@@ -71,7 +71,15 @@ enum class LLStatus
     InvalidConfig,    // geometry or ring sizing out of range
     AlreadyExists,    // another publisher holds this name and looks alive
     VersionMismatch,  // built against an incompatible layout
-    MappingFailed,    // OS refused the mapping (size? permissions?)
+    // Named MappingFailure, not the more natural MappingFailed -- X11's own Xlib.h
+    // #defines MappingFailed as a numeric constant (one of its keyboard/pointer
+    // remapping-notify codes), which silently mangles this enumerator into a syntax
+    // error in any translation unit that also happens to include X11 headers (e.g.
+    // via GL/glx.h) before this one -- confirmed the hard way when
+    // llstreamingaudio_libvlc.cpp became the first file to pull this header into
+    // newview's own precompiled-header-polluted Linux build. Same bug category as
+    // this project's own LLCommand->LLShmCommand ODR-collision rename.
+    MappingFailure,   // OS refused the mapping (size? permissions?)
     Internal
 };
 

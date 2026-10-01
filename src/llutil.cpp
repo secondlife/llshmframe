@@ -39,7 +39,7 @@ const char* to_string(LLStatus s)
         case LLStatus::InvalidConfig:   return "invalid config";
         case LLStatus::AlreadyExists:   return "a publisher already owns this name";
         case LLStatus::VersionMismatch: return "incompatible segment layout";
-        case LLStatus::MappingFailed:   return "mapping failed";
+        case LLStatus::MappingFailure:  return "mapping failed";
         case LLStatus::Internal:        return "internal error";
     }
     return "unknown";
