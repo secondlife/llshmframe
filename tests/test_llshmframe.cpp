@@ -596,6 +596,89 @@ static void test_slow_consumer_command_backpressure()
     CHECK(drained == 8);
 }
 
+static void test_audio_packet_throughput()
+{
+    std::printf("CEF audio PCM throughput: realistic packet size/rate, paced consumer\n");
+
+    // Mirrors the planned config for a real CEF audio-capturing tab's slot (see
+    // the Viewer's llcefproducer.cpp kMaxCommandBytes, bumped from its current
+    // CEF-tab default of 4096 specifically for audio) -- 8192 gives a real
+    // stereo/48kHz/10ms chunk (~3.8KB) comfortable headroom alongside its own
+    // small header. No frames are ever published on this channel (audio rides
+    // the command channel only), so width/height are nominal.
+    LLConfig c; c.name = "sf_test_audio_throughput"; c.max_width = 1; c.max_height = 1;
+    c.command_slots = 64;
+    c.max_command_bytes = 8192;
+
+    auto pub = LLPublisher::create(c);
+    CHECK(pub != nullptr); if (!pub) return;
+    auto sub = LLSubscriber::open(c.name);
+    CHECK(sub->connected());
+
+    // One realistic CEF audio packet: a 12-byte header (int64 pts + uint32 frame
+    // count) plus planar stereo float32 @ 480 frames -- 10ms at 48kHz, a common
+    // Chromium audio-bus default and the size this project's own CEF-audio-PCM
+    // feasibility research assumed.
+    constexpr int           kChannels     = 2;
+    constexpr int           kFrames       = 480;
+    constexpr std::uint32_t kPayloadBytes = 12 + kChannels * kFrames * 4;
+    std::vector<std::uint8_t> packet(kPayloadBytes, 0);
+
+    // Producer paced at a real 10ms cadence (matching one audio packet per
+    // buffer, not an artificial tight-loop burst) against a consumer that only
+    // drains once per render frame (~16ms, i.e. genuinely slower than the
+    // producer) for several real seconds -- with a simulated render hitch every
+    // ~800ms (5 consecutive skipped drains, ~80ms) standing in for a real frame
+    // stall. The real question this answers: does the ring actually keep up
+    // with CEF's real delivery rate under realistic consumer pacing, not just
+    // in a synthetic worst-case burst (see test_slow_consumer_command_backpressure
+    // above for that case).
+    const auto producer_interval = std::chrono::milliseconds(10);
+    const auto consumer_interval = std::chrono::milliseconds(16);
+    const auto test_duration     = std::chrono::seconds(3);
+
+    std::atomic<bool> stop{false};
+    std::atomic<long> sent{0}, received{0};
+
+    std::thread prod([&] {
+        auto next = std::chrono::steady_clock::now();
+        while (!stop.load(std::memory_order_relaxed)) {
+            if (pub->send(100, packet.data(), kPayloadBytes)) ++sent;
+            next += producer_interval;
+            std::this_thread::sleep_until(next);
+        }
+    });
+
+    std::thread cons([&] {
+        auto next = std::chrono::steady_clock::now();
+        int tick = 0;
+        while (!stop.load(std::memory_order_relaxed)) {
+            bool hitch = (tick % 50) >= 45; // skip draining for 5 ticks every 50 (~800ms)
+            if (!hitch) {
+                LLShmCommand in;
+                while (sub->receive(in)) ++received;
+            }
+            ++tick;
+            next += consumer_interval;
+            std::this_thread::sleep_until(next);
+        }
+    });
+
+    std::this_thread::sleep_for(test_duration);
+    stop = true; prod.join(); cons.join();
+
+    // Final drain of whatever's left in the ring after stopping.
+    LLShmCommand in;
+    while (sub->receive(in)) ++received;
+
+    std::printf("  sent=%ld received=%ld dropped=%llu (payload=%u bytes, ring depth=%u)\n",
+                sent.load(), received.load(),
+                (unsigned long long)pub->commands_dropped(), kPayloadBytes, c.command_slots);
+
+    CHECK(received.load() == sent.load()); // every accepted send was eventually read
+    CHECK(pub->commands_dropped() == 0);   // the real question: zero drops under realistic pacing
+}
+
 int main()
 {
     test_config_and_sizing();
@@ -613,6 +696,7 @@ int main()
     test_subscriber_before_publisher();
     test_rate_limiting();
     test_slow_consumer_command_backpressure();
+    test_audio_packet_throughput();
 
     std::printf("\n%s (%d failures)\n", g_fail ? "FAILED" : "ALL PASSED", g_fail);
     return g_fail ? 1 : 0;
