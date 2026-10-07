@@ -600,40 +600,43 @@ static void test_audio_packet_throughput()
 {
     std::printf("CEF audio PCM throughput: realistic packet size/rate, paced consumer\n");
 
-    // Mirrors the planned config for a real CEF audio-capturing tab's slot (see
-    // the Viewer's llcefproducer.cpp kMaxCommandBytes, bumped from its current
-    // CEF-tab default of 4096 specifically for audio) -- 8192 gives a real
-    // stereo/48kHz/10ms chunk (~3.8KB) comfortable headroom alongside its own
-    // small header. No frames are ever published on this channel (audio rides
-    // the command channel only), so width/height are nominal.
+    // Mirrors the real config for a CEF audio-capturing tab's slot (see the
+    // Viewer's llcefproducer.cpp kAudioCaptureMaxCommandBytes, bumped from its
+    // CEF-tab default of 4096 specifically for audio) -- 16384 gives a real
+    // packet comfortable headroom. No frames are ever published on this channel
+    // (audio rides the command channel only), so width/height are nominal.
     LLConfig c; c.name = "sf_test_audio_throughput"; c.max_width = 1; c.max_height = 1;
     c.command_slots = 64;
-    c.max_command_bytes = 8192;
+    c.max_command_bytes = 16384;
 
     auto pub = LLPublisher::create(c);
     CHECK(pub != nullptr); if (!pub) return;
     auto sub = LLSubscriber::open(c.name);
     CHECK(sub->connected());
 
-    // One realistic CEF audio packet: a 12-byte header (int64 pts + uint32 frame
-    // count) plus planar stereo float32 @ 480 frames -- 10ms at 48kHz, a common
-    // Chromium audio-bus default and the size this project's own CEF-audio-PCM
-    // feasibility research assumed.
+    // One real CEF audio packet: a 12-byte header (int64 pts + uint32 frame count)
+    // plus planar stereo float32 @ 1024 frames -- CEF's own real, well-known default
+    // buffer size at 44100Hz, confirmed via a real captured slcefproducer_log.txt
+    // (an earlier guess of 480 frames @ 48kHz was wrong and, at the old 8192-byte
+    // max_command_bytes this test was then validating, silently passed this very
+    // test while the real size would have failed every single send() -- a reminder
+    // that this test is only as good as the packet-size assumption it's given).
     constexpr int           kChannels     = 2;
-    constexpr int           kFrames       = 480;
+    constexpr int           kFrames       = 1024;
     constexpr std::uint32_t kPayloadBytes = 12 + kChannels * kFrames * 4;
     std::vector<std::uint8_t> packet(kPayloadBytes, 0);
 
-    // Producer paced at a real 10ms cadence (matching one audio packet per
-    // buffer, not an artificial tight-loop burst) against a consumer that only
-    // drains once per render frame (~16ms, i.e. genuinely slower than the
-    // producer) for several real seconds -- with a simulated render hitch every
-    // ~800ms (5 consecutive skipped drains, ~80ms) standing in for a real frame
-    // stall. The real question this answers: does the ring actually keep up
-    // with CEF's real delivery rate under realistic consumer pacing, not just
-    // in a synthetic worst-case burst (see test_slow_consumer_command_backpressure
-    // above for that case).
-    const auto producer_interval = std::chrono::milliseconds(10);
+    // Producer paced at CEF's own real cadence for this buffer size (1024 frames /
+    // 44100Hz =~ 23ms per packet, not an artificial tight-loop burst) against a
+    // consumer that only drains once per render frame (~16ms, i.e. genuinely
+    // faster than the producer here, unlike the original 10ms assumption -- still
+    // a real, independent pacing, not synchronized with the producer) for several
+    // real seconds -- with a simulated render hitch every ~800ms (5 consecutive
+    // skipped drains, ~80ms) standing in for a real frame stall. The real question
+    // this answers: does the ring actually keep up with CEF's real delivery rate
+    // under realistic consumer pacing, not just in a synthetic worst-case burst
+    // (see test_slow_consumer_command_backpressure above for that case).
+    const auto producer_interval = std::chrono::milliseconds(23);
     const auto consumer_interval = std::chrono::milliseconds(16);
     const auto test_duration     = std::chrono::seconds(3);
 
