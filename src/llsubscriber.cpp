@@ -54,8 +54,21 @@ struct LLSubscriber::Impl
     bool          owns_commands = false;
     std::uint64_t owner_gen     = 0; // our claim token, valid while owns_commands
 
-    std::uint64_t stale_ns     = 500ull * 1000 * 1000;
-    std::uint64_t retry_ns     = 250ull * 1000 * 1000;
+    // Widened 500ms -> 3000ms (2026-11-11): a CEF-side investigation found
+    // DoMessageLoopWork()'s OnPaint handling can genuinely cost tens to
+    // hundreds of ms per call once several browsers are live in one
+    // producer process -- real, healthy work, not a hang, but enough to
+    // blow past 500ms on a single slow iteration on capable hardware, and
+    // more easily still on weaker machines. Tripping this falsely declares
+    // a live, healthy producer dead, which (via LLEmbeddedBrowserTab::
+    // update()'s mSub.reset()/mAudioSub.reset()) immediately reconnects --
+    // adding MORE load right when the producer was already behind, which
+    // can cascade into a mass disconnect/reconnect avalanche across every
+    // active slot at once. 3000ms is a generous margin against that false
+    // trip while still catching a genuinely hung/crashed producer promptly
+    // relative to how rarely that actually happens.
+    std::uint64_t stale_ns     = 3000ull * 1000 * 1000;
+    std::uint64_t retry_ns     = 1500ull * 1000 * 1000;
     std::uint64_t last_progress = 0;
     std::uint64_t last_attempt  = 0;
 
